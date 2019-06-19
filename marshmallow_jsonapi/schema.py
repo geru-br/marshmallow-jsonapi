@@ -21,6 +21,14 @@ def plain_function(f):
     return f
 
 
+def dict_items_pop(di):
+    """Pop an item from object returned by dict.items()."""
+    if PY2:
+        return di.pop()
+    # Python 3 dict_items object has no pop method.
+    return list(di).pop()
+
+
 class SchemaOpts(ma.SchemaOpts):
     def __init__(self, meta, *args, **kwargs):
         super(SchemaOpts, self).__init__(meta, *args, **kwargs)
@@ -287,6 +295,17 @@ class Schema(ma.Schema):
 
     ### Overridable hooks ###
 
+    def _extract_error_from_dict(self, field_name, field_errors):
+        if field_errors and isinstance(field_errors, dict):
+            k, field_errors = dict_items_pop(field_errors.items())
+            field_name = "{}/{}".format(field_name, k)
+            if isinstance(field_errors, dict):
+                field_name, field_errors = self._extract_error_from_dict(
+                    field_name, field_errors
+                )
+                return field_name, field_errors
+        return field_name, field_errors
+
     def format_errors(self, errors, many):
         """Format validation errors as JSON Error objects."""
         if not errors:
@@ -298,16 +317,25 @@ class Schema(ma.Schema):
         if many:
             for index, errors in iteritems(errors):
                 for field_name, field_errors in iteritems(errors):
+                    field_name_, field_errors_ = self._extract_error_from_dict(
+                        field_name, field_errors
+                    )
                     formatted_errors.extend(
                         [
-                            self.format_error(field_name, message, index=index)
-                            for message in field_errors
+                            self.format_error(field_name_, message, index=index)
+                            for message in field_errors_
                         ]
                     )
         else:
             for field_name, field_errors in iteritems(errors):
+                field_name_, field_errors_ = self._extract_error_from_dict(
+                    field_name, field_errors
+                )
                 formatted_errors.extend(
-                    [self.format_error(field_name, message) for message in field_errors]
+                    [
+                        self.format_error(field_name_, message)
+                        for message in field_errors_
+                    ]
                 )
         return {"errors": formatted_errors}
 
